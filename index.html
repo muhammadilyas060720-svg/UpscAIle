@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Photo Upscaler – Peningkatan Resolusi Foto</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    :root{--primary:#3b82f6}
+    .glass{@apply backdrop-blur bg-white/10 border border-white/20 rounded-xl p-6}
+    .dark .glass{@apply bg-slate-900/30 border-white/10}
+    .toast{position:fixed;top:20px;right:20px;padding:14px 20px;border-radius:8px;color:#fff;font-weight:500;z-index:50;transform:translateX(400px);transition:transform .3s}
+    .toast.show{transform:translateX(0)}
+    .toast.ok{background:#10b981}
+    .toast.err{background:#ef4444}
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 transition-colors">
+<div id="root"></div>
+
+<script type="text/babel">
+  const {useState,useEffect,useRef}=React;
+
+  const Toast = ({show,message,type})=>{
+    return show?<div className={`toast ${type}`}>{message}</div>:null;
+  };
+
+  function App(){
+    const [img,setImg]=useState(null);
+    const [out,setOut]=useState(null);
+    const [scale,setScale]=useState(2);
+    const [run,setRun]=useState(!1);
+    const [dark,setDark]=useState(localStorage.dark==="1");
+    const [toast,setToast]=useState({show:!1,message:"",type:"ok"});
+    const canvasRef=useRef();
+
+    useEffect(()=>{
+      dark?document.documentElement.classList.add("dark"):document.documentElement.classList.remove("dark");
+      localStorage.dark=dark?"1":"";
+    },[dark]);
+
+    const onFile=(e)=>{
+      const f=e.target.files[0];if(!f)return;
+      const ok=["image/jpeg","image/jpg","image/png","image/webp"];
+      if(!ok.includes(f.type)){setToast({show:!0,message:"Format salah – gunakan JPG/PNG/WebP",type:"err"});return}
+      if(f.size>10*1024*1024){setToast({show:!0,message:"Ukuran file melebihi 10 MB",type:"err"});return}
+      const u=URL.createObjectURL(f);const i=new Image();i.src=u;
+      i.onload=()=>{
+        if(i.width>5000||i.height>5000){URL.revokeObjectURL(u);setToast({show:!0,message:"Resolusi melebihi 5000 px",type:"err"});return}
+        setImg({name:f.name,src:u,el:i,w:i.width,h:i.height});
+        setToast({show:!0,message:"Gambar siap diproses",type:"ok"});
+      };
+    };
+
+    const go=()=>{
+      if(!img||run)return;
+      setRun(!0);setOut(null);
+      const c=document.createElement("canvas");const ctx=c.getContext("2d");
+      const w=img.w*scale,h=img.h*scale;
+      if(w>16000||h>16000){setToast({show:!0,message:"Output melebihi 16000 px",type:"err"});setRun(!1);return}
+      c.width=w;c.height=h;
+      ctx.imageSmoothingEnabled=!0;
+      ctx.imageSmoothingQuality="high";
+      ctx.drawImage(img.el,0,0,w,h);
+      setOut(c.toDataURL("image/png"));
+      setRun(!1);
+      setToast({show:!0,message:"Upscale selesai",type:"ok"});
+    };
+
+    const download=()=>{
+      const a=document.createElement("a");
+      a.href=out;
+      a.download=img.name.replace(/\.\w+/,`_x${scale}.png`);
+      a.click();
+      setToast({show:!0,message:"File diunduh ke folder Download",type:"ok"});
+    };
+
+    const shareGal=async()=>{
+      const blob=await(await fetch(out)).blob();
+      const file=new File([blob],img.name.replace(/\.\w+/,`_x${scale}.png`),{type:"image/png"});
+      if(navigator.canShare?.({files:[file]})){
+        await navigator.share({title:"Hasil Upscale",text:"Lihat hasil peningkatan resolusiku!",files:[file]});
+        setToast({show:!0,message:"Gambar disimpan ke galeri",type:"ok"});
+      }else{download();}
+    };
+
+    return(
+      <div className={`min-h-screen ${dark?"dark":""}`}>
+        <header className="bg-white dark:bg-slate-800 shadow px-4 py-3 flex items-center justify-between">
+          <h1 className="text-xl font-bold text-slate-800 dark:text-white">AI Photo Upscaler</h1>
+          <button onClick={()=>setDark(!dark)} className="px-3 py-1 rounded bg-slate-100 dark:bg-slate-700">{dark?"☀️":"🌙"}</button>
+        </header>
+        <main className="container mx-auto px-4 py-6 grid lg:grid-cols-2 gap-6">
+          <div className="glass space-y-4">
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">1. Pilih Skala</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {[2,4,8].map(s=><button key={s} onClick={()=>setScale(s)} className={`py-2 rounded ${scale===s?"bg-blue-600 text-white":"bg-slate-200 dark:bg-slate-700"}`}>{s}×</button>)}
+            </div>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">2. Upload Gambar</h2>
+            {!img?
+              <label className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-8 block text-center cursor-pointer hover:border-blue-500">
+                <span className="text-slate-600 dark:text-slate-300">Drag & drop atau klik</span><br/>
+                <span className="text-xs text-slate-400">Max 10 MB – 5000×5000 px</span>
+                <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={onFile} className="hidden"/>
+              </label>
+              :
+              <div>
+                <img src={img.src} className="w-full rounded-lg"/>
+                <p className="text-xs text-slate-500 mt-2">{img.w} × {img.h} px</p>
+              </div>
+            }
+            <button onClick={go} disabled={!img||run} className="w-full py-3 bg-blue-600 text-white rounded-lg disabled:opacity-50">{run?"Memproses...":"Upscale"}</button>
+          </div>
+
+          <div className="glass">
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-3">Hasil</h2>
+            {run&&<div className="text-center py-10"><div className="w-10 h-10 border-4 border-slate-200 border-t-blue-600 rounded-full spin mx-auto"></div></div>}
+            {out&&
+              <div>
+                <img src={out} className="w-full rounded-lg"/>
+                <div className="flex gap-3 mt-4">
+                  <button onClick={download} className="flex-1 py-2 bg-green-600 text-white rounded">💾 Download</button>
+                  <button onClick={shareGal} className="flex-1 py-2 bg-blue-600 text-white rounded">📱 Simpan ke Galeri</button>
+                </div>
+              </div>
+            }
+            {!out&&!run&&<div className="h-40 flex items-center justify-center text-slate-400">Belum ada hasil</div>}
+          </div>
+        </main>
+        <Toast {...toast}/>
+      </div>
+    );
+  }
+  ReactDOM.render(<App/>,document.getElementById("root"));
+</script>
+</body>
+</html>
